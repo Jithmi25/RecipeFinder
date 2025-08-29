@@ -1,0 +1,27 @@
+version: "3.8"
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_USER: dev
+      MYSQL_PASSWORD: devpass
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: recipes
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: mysql://dev:devpass@db:3306/recipes
+    depends_on:
+      - db
+    ports:
+      - "3000:3000"
+  web:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+volumes:
+  db_data:
