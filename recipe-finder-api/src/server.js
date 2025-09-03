@@ -1,10 +1,12 @@
 import express from 'express';
 import mysql from 'mysql2/promise';
 import cors from 'cors';
+import recipeRoutes from './routes/recipes.js';
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use('/api/recipes', recipeRoutes);
 
 const pool = mysql.createPool({
   host: process.env.MYSQL_HOST || 'localhost',
