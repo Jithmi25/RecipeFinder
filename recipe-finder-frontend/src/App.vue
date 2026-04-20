@@ -21,14 +21,43 @@
         <button class="sign-out" @click="logout">Sign out</button>
       </header>
 
-      <h1 class="title">Recipe Finder</h1>
-      <SearchBar />
-      <IngredientInput />
-      <div class="recipes">
-        <RecipeCard
-          v-for="recipe in searchStore.recipes"
-          :key="recipe.id"
-          :recipe="recipe"
+      <h1 class="title">🍲 Recipe Finder</h1>
+
+      <SearchBar @search="onSearch" />
+
+      <FilterBar
+        v-if="searchStore.dietTypes.length > 0"
+        @filter-changed="onFilterChanged"
+        @clear-filters="onClearFilters"
+      />
+
+      <LoadingState v-if="searchStore.isLoading" />
+      <ErrorState
+        v-else-if="searchStore.error"
+        :message="searchStore.error"
+        @retry="onRetry"
+      />
+      <EmptyState
+        v-else-if="searchStore.isEmpty"
+        title="No recipes found"
+        message="Try adjusting your filters or search terms."
+      />
+      <div v-else-if="searchStore.recipes.length > 0">
+        <div class="recipes-grid">
+          <RecipeCard
+            v-for="recipe in searchStore.recipes"
+            :key="recipe.id"
+            :recipe="recipe"
+          />
+        </div>
+
+        <Pagination
+          :current-page-no="searchStore.currentPageNo"
+          :total-pages="searchStore.totalPages"
+          :total="searchStore.total"
+          :has-more="searchStore.hasMore"
+          @prev="searchStore.prevPage(); performSearch()"
+          @next="searchStore.nextPage(); performSearch()"
         />
       </div>
     </section>
@@ -38,8 +67,12 @@
 <script setup>
 import { computed, nextTick, onMounted } from "vue";
 import SearchBar from "./components/SearchBar.vue";
-import IngredientInput from "./components/IngredientInput.vue";
+import FilterBar from "./components/FilterBar.vue";
 import RecipeCard from "./components/RecipeCard.vue";
+import LoadingState from "./components/LoadingState.vue";
+import EmptyState from "./components/EmptyState.vue";
+import ErrorState from "./components/ErrorState.vue";
+import Pagination from "./components/Pagination.vue";
 import { useSearchStore } from "./store/useSearchStore";
 import { useAuthStore } from "./store/useAuthStore";
 
@@ -51,9 +84,32 @@ const hasGoogleClientId = computed(() => Boolean(googleClientId));
 function logout() {
   authStore.logout();
   searchStore.recipes = [];
+  searchStore.lastSearch = null;
+  searchStore.searchQuery = "";
   nextTick(() => {
     initializeGoogleButton();
   });
+}
+
+async function onSearch() {
+  await performSearch();
+}
+
+async function onFilterChanged() {
+  await searchStore.applyFilters();
+}
+
+function onClearFilters() {
+  searchStore.setSelectedDiets([]);
+  searchStore.applyFilters();
+}
+
+async function onRetry() {
+  await performSearch();
+}
+
+async function performSearch() {
+  await searchStore._performSearch();
 }
 
 function initializeGoogleButton(retryCount = 0) {
@@ -76,6 +132,9 @@ function initializeGoogleButton(retryCount = 0) {
         return;
       }
       await authStore.loginWithGoogleCredential(response.credential);
+      nextTick(() => {
+        searchStore.fetchDietTypes();
+      });
     },
   });
 
@@ -89,7 +148,11 @@ function initializeGoogleButton(retryCount = 0) {
 }
 
 onMounted(() => {
-  initializeGoogleButton();
+  if (authStore.isAuthenticated) {
+    searchStore.fetchDietTypes();
+  } else {
+    initializeGoogleButton();
+  }
 });
 </script>
 
@@ -103,7 +166,7 @@ onMounted(() => {
 
 .auth-card,
 .app-card {
-  width: min(900px, 100%);
+  width: min(1000px, 100%);
   border-radius: 20px;
   border: 1px solid #e2e8f0;
   background: #ffffff;
@@ -160,11 +223,14 @@ h2 {
   justify-content: space-between;
   align-items: center;
   gap: 12px;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
 }
 
 .title {
-  margin-bottom: 20px;
+  margin: 0 0 24px 0;
+  font-size: 2rem;
 }
 
 .sign-out {
@@ -175,13 +241,18 @@ h2 {
   padding: 10px 14px;
   font-weight: 600;
   cursor: pointer;
+  transition: background-color 0.2s;
 }
 
-.recipes {
+.sign-out:hover {
+  background: #334155;
+}
+
+.recipes-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 16px;
-  margin-top: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px;
+  margin-bottom: 28px;
 }
 
 @media (max-width: 700px) {
@@ -193,6 +264,14 @@ h2 {
   .app-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .recipes-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .title {
+    font-size: 1.5rem;
   }
 }
 </style>
