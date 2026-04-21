@@ -1,106 +1,241 @@
-import { pool } from '../db.js';
+import { getFirestore } from "../firebaseAdmin.js";
+import {
+  fetchCategories,
+  fetchIngredientsList,
+  fetchMealById,
+  fetchMealsByCategory,
+  fetchMealsBySearch,
+} from "../services/theMealDbService.js";
+
+const FAVORITES_COLLECTION = "user_favorites";
+
+function slugify(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function extractIngredients(meal) {
+  const items = [];
+
+  for (let i = 1; i <= 20; i += 1) {
+    const ingredient = meal[`strIngredient${i}`]?.trim();
+    const quantity = meal[`strMeasure${i}`]?.trim();
+
+    if (!ingredient) {
+      continue;
+    }
+
+    items.push({
+      name: ingredient,
+      quantity: quantity || "",
+    });
+  }
+
+  return items;
+}
+
+function normalizeMealSummary(meal) {
+  const mealId = Number(meal.idMeal);
+  const category = meal.strCategory || "";
+  const area = meal.strArea || "";
+  const description = [category, area].filter(Boolean).join(" • ");
+
+  return {
+    id: Number.isNaN(mealId) ? meal.idMeal : mealId,
+    title: meal.strMeal || "Untitled Meal",
+    slug: slugify(meal.strMeal),
+    description,
+    instructions: meal.strInstructions || "",
+    prep_minutes: null,
+    cook_minutes: null,
+    servings: null,
+    popularity: 0,
+    diet_types: category || "",
+    image_url: meal.strMealThumb || "",
+  };
+}
+
+function normalizeMealDetails(meal) {
+  return {
+    ...normalizeMealSummary(meal),
+    ingredients: extractIngredients(meal),
+  };
+}
+
+async function resolveCategoryNames(categoryKeys) {
+  if (!categoryKeys || categoryKeys.length === 0) {
+    return [];
+  }
+
+  const categories = await fetchCategories();
+  const byKey = new Map(
+    categories.map((item) => [slugify(item.strCategory), item.strCategory]),
+  );
+
+  return categoryKeys
+    .map((key) => byKey.get(key) || null)
+    .filter((value) => Boolean(value));
+}
+
+async function getMealsFromCategoryFilters(categoryNames) {
+  if (!categoryNames || categoryNames.length === 0) {
+    return [];
+  }
+
+  const grouped = await Promise.all(
+    categoryNames.map((name) => fetchMealsByCategory(name)),
+  );
+
+  const unique = new Map();
+  grouped.flat().forEach((meal) => {
+    unique.set(meal.idMeal, meal);
+  });
+
+  return [...unique.values()];
+}
 
 export async function getDietTypes() {
-  const [rows] = await pool.query(
-    'SELECT id, key_name, display_name FROM diet_types ORDER BY display_name'
-  );
-  return rows;
+  const categories = await fetchCategories();
+
+  return categories.map((item, index) => ({
+    id: index + 1,
+    key_name: slugify(item.strCategory),
+    display_name: item.strCategory,
+  }));
 }
 
 export async function getIngredients(limit = 20) {
-  const [rows] = await pool.query(
-    'SELECT id, name, normalized_name FROM ingredients ORDER BY name LIMIT ?',
-    [limit]
-  );
-  return rows;
+  const ingredients = await fetchIngredientsList();
+
+  return ingredients.slice(0, limit).map((item, index) => ({
+    id: index + 1,
+    name: item.strIngredient,
+    normalized_name: String(item.strIngredient || "").toLowerCase(),
+  }));
 }
 
 export async function getRecipes({ q, dietTypes, limit = 12, offset = 0 }) {
-  let sql = `
-    SELECT DISTINCT r.id, r.title, r.slug, r.description, r.instructions, 
-           r.prep_minutes, r.cook_minutes, r.servings, r.popularity
-    FROM recipes r
-    WHERE 1=1
-  `;
-  const params = [];
+  const normalizedQuery = String(q || "").trim();
+  const categoryNames = await resolveCategoryNames(dietTypes);
 
-  if (q) {
-    sql += ' AND (r.title LIKE ? OR r.description LIKE ?)';
-    const searchTerm = `%${q}%`;
-    params.push(searchTerm, searchTerm);
+  let sourceMeals = [];
+
+  if (normalizedQuery) {
+    sourceMeals = await fetchMealsBySearch(normalizedQuery);
   }
 
-  if (dietTypes && dietTypes.length > 0) {
-    const placeholders = dietTypes.map(() => '?').join(',');
-    sql += `
-      AND r.id IN (
-        SELECT rdt.recipe_id 
-        FROM recipe_diet_types rdt
-        JOIN diet_types dt ON dt.id = rdt.diet_type_id
-        WHERE dt.key_name IN (${placeholders})
-      )
-    `;
-    params.push(...dietTypes);
+  if (categoryNames.length > 0) {
+    const categoryMeals = await getMealsFromCategoryFilters(categoryNames);
+
+    if (normalizedQuery) {
+      const categoryIds = new Set(categoryMeals.map((meal) => meal.idMeal));
+      sourceMeals = sourceMeals.filter((meal) => categoryIds.has(meal.idMeal));
+    } else {
+      sourceMeals = categoryMeals;
+    }
   }
 
-  sql += ' ORDER BY r.popularity DESC, r.title ASC LIMIT ? OFFSET ?';
-  params.push(limit, offset);
+  const sliced = sourceMeals.slice(offset, offset + limit);
 
-  const [rows] = await pool.query(sql, params);
-  return rows;
+  return sliced.map((meal) => {
+    const normalized = normalizeMealSummary(meal);
+
+    // Meals fetched from filter endpoint omit category/area/instructions.
+    if (!meal.strCategory && categoryNames.length > 0) {
+      normalized.diet_types = categoryNames.join(", ");
+      normalized.description = categoryNames.join(" • ");
+    }
+
+    return normalized;
+  });
 }
 
 export async function getRecipeCount({ q, dietTypes }) {
-  let sql = 'SELECT COUNT(DISTINCT r.id) as total FROM recipes r WHERE 1=1';
-  const params = [];
+  const normalizedQuery = String(q || "").trim();
+  const categoryNames = await resolveCategoryNames(dietTypes);
 
-  if (q) {
-    sql += ' AND (r.title LIKE ? OR r.description LIKE ?)';
-    const searchTerm = `%${q}%`;
-    params.push(searchTerm, searchTerm);
+  let sourceMeals = [];
+
+  if (normalizedQuery) {
+    sourceMeals = await fetchMealsBySearch(normalizedQuery);
   }
 
-  if (dietTypes && dietTypes.length > 0) {
-    const placeholders = dietTypes.map(() => '?').join(',');
-    sql += `
-      AND r.id IN (
-        SELECT rdt.recipe_id 
-        FROM recipe_diet_types rdt
-        JOIN diet_types dt ON dt.id = rdt.diet_type_id
-        WHERE dt.key_name IN (${placeholders})
-      )
-    `;
-    params.push(...dietTypes);
+  if (categoryNames.length > 0) {
+    const categoryMeals = await getMealsFromCategoryFilters(categoryNames);
+
+    if (normalizedQuery) {
+      const categoryIds = new Set(categoryMeals.map((meal) => meal.idMeal));
+      sourceMeals = sourceMeals.filter((meal) => categoryIds.has(meal.idMeal));
+    } else {
+      sourceMeals = categoryMeals;
+    }
   }
 
-  const [result] = await pool.query(sql, params);
-  return result[0]?.total || 0;
+  return sourceMeals.length;
 }
 
 export async function getRecipeDetails(id) {
-  const [recipes] = await pool.query(
-    `SELECT r.*, 
-            GROUP_CONCAT(DISTINCT dt.display_name SEPARATOR ', ') as diet_types
-     FROM recipes r
-     LEFT JOIN recipe_diet_types rdt ON r.id = rdt.recipe_id
-     LEFT JOIN diet_types dt ON dt.id = rdt.diet_type_id
-     WHERE r.id = ?
-     GROUP BY r.id`,
-    [id]
-  );
+  const meal = await fetchMealById(id);
 
-  if (recipes.length === 0) return null;
+  if (!meal) {
+    return null;
+  }
 
-  const [ingredients] = await pool.query(
-    `SELECT i.name, ri.quantity
-     FROM recipe_ingredients ri
-     JOIN ingredients i ON i.id = ri.ingredient_id
-     WHERE ri.recipe_id = ?`,
-    [id]
-  );
+  return normalizeMealDetails(meal);
+}
 
-  return {
-    ...recipes[0],
-    ingredients: ingredients
-  };
+export async function getFavoriteRecipesByUser(userId) {
+  const db = getFirestore();
+  const snapshot = await db
+    .collection(FAVORITES_COLLECTION)
+    .where("userId", "==", userId)
+    .get();
+
+  const items = snapshot.docs.map((doc) => doc.data());
+
+  items.sort((a, b) => {
+    const aTime = a.favoritedAt || "";
+    const bTime = b.favoritedAt || "";
+    return bTime.localeCompare(aTime);
+  });
+
+  return items;
+}
+
+export async function getFavoriteRecipeIdsByUser(userId) {
+  const rows = await getFavoriteRecipesByUser(userId);
+  return rows
+    .map((item) => Number(item.id))
+    .filter((id) => Number.isInteger(id));
+}
+
+export async function addFavoriteRecipe(userId, recipeId) {
+  const details = await getRecipeDetails(recipeId);
+
+  if (!details) {
+    return false;
+  }
+
+  const db = getFirestore();
+  const docId = `${userId}_${details.id}`;
+
+  await db
+    .collection(FAVORITES_COLLECTION)
+    .doc(docId)
+    .set({
+      ...details,
+      userId,
+      favoritedAt: new Date().toISOString(),
+    });
+
+  return true;
+}
+
+export async function removeFavoriteRecipe(userId, recipeId) {
+  const db = getFirestore();
+  const docId = `${userId}_${recipeId}`;
+  await db.collection(FAVORITES_COLLECTION).doc(docId).delete();
 }

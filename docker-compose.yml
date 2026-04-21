@@ -9,18 +9,38 @@ services:
       MYSQL_DATABASE: recipes
     volumes:
       - db_data:/var/lib/mysql
+      - ./seed:/docker-entrypoint-initdb.d
     ports:
       - "3306:3306"
   api:
-    build: ./backend
+    build: ./recipe-finder-api
     environment:
-      DATABASE_URL: mysql://dev:devpass@db:3306/recipes
+      DB_HOST: db
+      DB_USER: dev
+      DB_PASS: devpass
+      DB_NAME: recipes
+      PORT: 3000
+      FRONTEND_ORIGIN: http://localhost:5173
+      GOOGLE_CLIENT_ID: 597837367481-6t85jdtva33nsg7p9d6vpirkh73ft01e.apps.googleusercontent.com
+      JWT_SECRET: a-secret-123
     depends_on:
       - db
     ports:
       - "3000:3000"
   web:
-    build: ./frontend
+    build: ./recipe-finder-frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000
+      VITE_GOOGLE_CLIENT_ID: 597837367481-6t85jdtva33nsg7p9d6vpirkh73ft01e.apps.googleusercontent.com
+      VITE_FIREBASE_API_KEY: AIzaSyDp9d6FqYhPCr2MGafaCkNaMKL826pSzPs
+      VITE_FIREBASE_AUTH_DOMAIN: recipefinder-65ecf.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: recipefinder-65ecf
+      VITE_FIREBASE_STORAGE_BUCKET: recipefinder-65ecf.firebasestorage.app
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "741082760316"
+      VITE_FIREBASE_APP_ID: 1:741082760316:web:f1294f2c10831ec87135f9
+      VITE_FIREBASE_MEASUREMENT_ID: G-WKS55K01VJ
+    depends_on:
+      - api
     ports:
       - "5173:5173"
 volumes:
