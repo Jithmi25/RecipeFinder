@@ -10,6 +10,15 @@ import {
   removeFavoriteRecipe,
 } from "../models/recipeModel.js";
 
+const TEMP_UNAVAILABLE_ERROR = {
+  error: "Saved recipes service is temporarily unavailable.",
+};
+
+function logUnavailableError(scope, err) {
+  const detail = err?.message || String(err);
+  console.error(`[${scope}] ${detail}`);
+}
+
 export async function searchRecipes(req, res) {
   try {
     const q = req.query.q || "";
@@ -32,7 +41,8 @@ export async function searchRecipes(req, res) {
       },
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    logUnavailableError("searchRecipes", err);
+    res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }
 
@@ -66,7 +76,8 @@ export async function getRecipeById(req, res) {
 
     res.json(recipe);
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    logUnavailableError("getRecipeById", err);
+    res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }
 
@@ -76,11 +87,8 @@ export async function listFavoriteRecipes(req, res) {
     const rows = await getFavoriteRecipesByUser(userId);
     res.json(rows);
   } catch (err) {
-    res.status(503).json({
-      error:
-        "Favorites service unavailable. Verify Firebase Admin credentials.",
-      detail: err.message,
-    });
+    logUnavailableError("listFavoriteRecipes", err);
+    res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }
 
@@ -90,18 +98,15 @@ export async function listFavoriteRecipeIds(req, res) {
     const recipeIds = await getFavoriteRecipeIdsByUser(userId);
     res.json({ recipeIds });
   } catch (err) {
-    res.status(503).json({
-      error:
-        "Favorites service unavailable. Verify Firebase Admin credentials.",
-      detail: err.message,
-    });
+    logUnavailableError("listFavoriteRecipeIds", err);
+    res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }
 
 export async function addFavorite(req, res) {
   try {
     const userId = req.user.sub;
-    const recipeId = Number(req.params.id);
+    const recipeId = Number(req.params.recipeId ?? req.params.id);
 
     if (!Number.isInteger(recipeId) || recipeId <= 0) {
       return res.status(400).json({ error: "Invalid recipe id." });
@@ -115,18 +120,15 @@ export async function addFavorite(req, res) {
 
     return res.status(201).json({ success: true });
   } catch (err) {
-    return res.status(503).json({
-      error:
-        "Favorites service unavailable. Verify Firebase Admin credentials.",
-      detail: err.message,
-    });
+    logUnavailableError("addFavorite", err);
+    return res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }
 
 export async function removeFavorite(req, res) {
   try {
     const userId = req.user.sub;
-    const recipeId = Number(req.params.id);
+    const recipeId = Number(req.params.recipeId ?? req.params.id);
 
     if (!Number.isInteger(recipeId) || recipeId <= 0) {
       return res.status(400).json({ error: "Invalid recipe id." });
@@ -135,10 +137,7 @@ export async function removeFavorite(req, res) {
     await removeFavoriteRecipe(userId, recipeId);
     return res.json({ success: true });
   } catch (err) {
-    return res.status(503).json({
-      error:
-        "Favorites service unavailable. Verify Firebase Admin credentials.",
-      detail: err.message,
-    });
+    logUnavailableError("removeFavorite", err);
+    return res.status(503).json(TEMP_UNAVAILABLE_ERROR);
   }
 }

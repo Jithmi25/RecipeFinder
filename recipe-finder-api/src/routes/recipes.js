@@ -18,8 +18,8 @@ router.get("/diets", authenticateToken, getDiets);
 router.get("/ingredients", authenticateToken, getIngredientsList);
 router.get("/favorites", authenticateToken, listFavoriteRecipes);
 router.get("/favorites/ids", authenticateToken, listFavoriteRecipeIds);
-router.post("/favorites/:id", authenticateToken, addFavorite);
-router.delete("/favorites/:id", authenticateToken, removeFavorite);
+router.post("/favorites/:recipeId", authenticateToken, addFavorite);
+router.delete("/favorites/:recipeId", authenticateToken, removeFavorite);
 router.get("/:id", authenticateToken, getRecipeById);
 
 export default router;

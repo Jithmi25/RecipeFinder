@@ -19,7 +19,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`);
 });

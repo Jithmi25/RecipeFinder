@@ -194,7 +194,18 @@ export async function getFavoriteRecipesByUser(userId) {
     .where("userId", "==", userId)
     .get();
 
-  const items = snapshot.docs.map((doc) => doc.data());
+  const items = snapshot.docs.map((doc) => {
+    const item = doc.data();
+    return {
+      ...item,
+      image_url:
+        item.image_url ||
+        item.imageUrl ||
+        item.image ||
+        item.thumbnail_url ||
+        "",
+    };
+  });
 
   items.sort((a, b) => {
     const aTime = a.favoritedAt || "";
