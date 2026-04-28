@@ -7,7 +7,8 @@ import authRoutes from "./routes/auth.js";
 dotenv.config();
 
 const app = express();
-const DEFAULT_FRONTEND_ORIGIN = "http://localhost:5173";
+const DEFAULT_FRONTEND_ORIGIN =
+  "https://recipe-finder-frontend-hazel.vercel.app/";
 const allowedOrigins = [
   ...(process.env.FRONTEND_ORIGIN || "")
     .split(",")
@@ -35,9 +36,19 @@ const corsOptions = {
     callback(new Error(`Origin ${origin} not allowed by CORS`));
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 app.use(cors(corsOptions));
+
+// Add COOP/COEP headers for Google OAuth compatibility
+app.use((req, res, next) => {
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+  next();
+});
+
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
