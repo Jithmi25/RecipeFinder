@@ -42,14 +42,24 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Normalize repeated slashes in request paths (e.g. //api/auth/google).
+app.use((req, _res, next) => {
+  const [path, query] = req.url.split("?");
+  const normalizedPath = path.replace(/\/{2,}/g, "/");
+  req.url = query ? `${normalizedPath}?${query}` : normalizedPath;
+  next();
+});
+
 // Add COOP/COEP headers for Google OAuth compatibility
 app.use((req, res, next) => {
   res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
-  res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
   next();
 });
 
 app.use(express.json());
+app.get("/health", (_req, res) => {
+  res.status(200).json({ ok: true });
+});
 app.use("/api/auth", authRoutes);
 app.use("/api/recipes", recipeRoutes);
 

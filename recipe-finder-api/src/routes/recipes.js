@@ -15,6 +15,7 @@ const router = Router();
 
 router.get("/search", authenticateToken, searchRecipes);
 router.get("/diets", authenticateToken, getDiets);
+router.get("/categories", authenticateToken, getDiets);
 router.get("/ingredients", authenticateToken, getIngredientsList);
 router.get("/favorites", authenticateToken, listFavoriteRecipes);
 router.get("/favorites/ids", authenticateToken, listFavoriteRecipeIds);
